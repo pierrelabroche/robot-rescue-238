@@ -1,6 +1,8 @@
 import numpy as np
 import random
 
+from collections import deque
+
 ACTION_TO_DELTA = {
     'N': (-1, 0),
     'S': (1, 0),
@@ -63,25 +65,47 @@ class GridWorld:
         self.obs_density = obstacle_density
         self.person_move_prob = person_move_prob
         # 1. Generate the Grid (0: open, 1: obstacle, 2: goal/rescue zone)
+        valid_init = False
+        attempts = 0  # Safety counter to prevent infinite loop
+        r_pos = (0, 0)
+        p_pos = (0, 0)
         self.grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
-        # Randomly place obstacles
-        num_obstacles = int(self.grid_size * self.grid_size * obstacle_density)
-        obstacle_coordinates = set()
-        while len(obstacle_coordinates) < num_obstacles:
-            r = np.random.randint(0, self.grid_size)
-            c = np.random.randint(0, self.grid_size)
-            obstacle_coordinates.add((r, c))
-        for r, c in obstacle_coordinates:
-            self.grid[r, c] = 1
-        # 2. Place initial positions (Robot and Person)
-        # Ensure they don't start on an obstacle and don't start on the same cell
-        initial_open_cells = [(r, c) for r in range(self.grid_size) for c in range(self.grid_size) if self.grid[r, c] == 0]
+        while not valid_init and attempts < 1000:
+            attempts += 1
+            # 1. Generate the Grid (0: open, 1: obstacle)
+            if attempts != 0: self.grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
+            # Randomly place obstacles
+            num_obstacles = int(self.grid_size * self.grid_size * obstacle_density)
+            obstacle_coordinates = set()
+            while len(obstacle_coordinates) < num_obstacles:
+                r = np.random.randint(0, self.grid_size)
+                c = np.random.randint(0, self.grid_size)
+                obstacle_coordinates.add((r, c))
+            for r, c in obstacle_coordinates:
+                self.grid[r, c] = 1
 
-        if len(initial_open_cells) < 2:
-            raise ValueError("Too few open cells to place robot and person.")
+            # 2. Place initial positions (Robot and Person)
+            initial_open_cells = [(r, c) for r in range(self.grid_size)
+                                  for c in range(self.grid_size)
+                                  if self.grid[r, c] == 0]
 
-        # Randomly sample initial positions
-        r_pos, p_pos = random.sample(initial_open_cells, 2)
+            if len(initial_open_cells) < 2:
+                # If too few cells are open, break and retry with a new grid
+                raise ValueError("Too few open cells to place robot and person.")
+
+                # Randomly sample initial positions
+            r_pos, p_pos = random.sample(initial_open_cells, 2)
+
+            # --- VALIDATION CHECKS ---
+
+            # Check Path must exist between robot and person start
+            path_exists = self.is_path_valid(r_pos, p_pos)
+
+            valid_init = path_exists
+
+        if not valid_init:
+            raise RuntimeError(
+                "Failed to generate a valid, reachable grid state after 1000 attempts. Try reducing obstacle density.")
 
         self.robot_pos = r_pos
         self.person_pos = p_pos
@@ -95,6 +119,48 @@ class GridWorld:
     def get_state(self):
         """Returns the current state: (robot_r, robot_c, person_r, person_c)"""
         return *self.robot.get_pos(), *self.person.get_pos()
+
+    def is_path_valid(self, start_pos, target_pos):
+        """
+        Uses Breadth-First Search (BFS) to check if a path exists
+        from start_pos to target_pos, avoiding obstacles (grid value 1).
+        """
+        if self.grid[start_pos] == 1 or self.grid[target_pos] == 1:
+            return False  # Start or target on an obstacle
+
+        if start_pos == target_pos:
+            return True
+
+        queue = deque([start_pos])
+        visited = {start_pos}
+
+        # Use the same movement deltas as the entities
+        deltas = list(ACTION_TO_DELTA.values())[:-1]  # N, S, E, W movements (exclude STAY)
+
+        while queue:
+            r, c = queue.popleft()
+
+            for dr, dc in deltas:
+                nr, nc = r + dr, c + dc
+                next_pos = (nr, nc)
+
+                # 1. Check if the next position is within bounds
+                is_valid = (0 <= nr < self.grid_size and 0 <= nc < self.grid_size)
+
+                if is_valid:
+                    # 2. Check for obstacles and visited status
+                    is_open = self.grid[nr, nc] != 1
+                    is_new = next_pos not in visited
+
+                    if is_open and is_new:
+                        if next_pos == target_pos:
+                            return True  # Path found
+
+                        visited.add(next_pos)
+                        queue.append(next_pos)
+
+        return False  # Queue is empty, but target not reached
+
     def reset(self):
         self.robot_pos = self.initial_state[:2]
         self.person_pos = self.initial_state[2:]
