@@ -10,7 +10,7 @@ ACTION_TO_DELTA = {
     'W': (0, -1),
     'STAY': (0, 0) # Include STAY action
 }
-
+Manhattan_Dist = lambda pos1, pos2: abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 class MovableEntity:
     """Base class for anything that can move in the grid."""
     def __init__(self, start_pos, grid_size):
@@ -174,6 +174,7 @@ class GridWorld:
         Calculates the new state, reward, and termination status
         after the robot takes an action.
         """
+        curr_dist = Manhattan_Dist(self.robot.get_pos(), self.person.get_pos())
         # 1. Robot Movement (Deterministic)
         self.robot.move(action, self.grid)
 
@@ -188,7 +189,9 @@ class GridWorld:
         if self.robot.get_pos() == self.person.get_pos():
             reward += 100  # Large positive reward for rescue
             done = True
-
+        new_dist = Manhattan_Dist(self.robot.get_pos(), self.person.get_pos())
+        # Small reward for moving closer, penalty for moving away
+        reward += (curr_dist - new_dist) * 2
         return self.get_state(), reward, done
 
     def render(self):
