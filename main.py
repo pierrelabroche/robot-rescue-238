@@ -1,12 +1,20 @@
 import numpy as np
 import random
 import time
+import sys
+from enum import Enum
 
 from environment import GridWorld
 from qlearning import QLearningAgent
+from value_iteration import value_iteration
 
 """A simple grid world environment for a search-and-rescue robot scenario.
 The robot must navigate a grid with obstacles to reach a person in need of rescue."""
+
+class Algorithm(Enum):
+    Q_LEARNING = 1
+    VALUE_ITERATION = 2
+    ALL = 3
 
 def train_agent(env, agent, num_episodes):
     """Runs the Q-Learning training loop."""
@@ -40,6 +48,28 @@ def train_agent(env, agent, num_episodes):
     print(f"\nTraining Complete in {end_time - start_time:.2f} seconds.")
     print(f"Total learned states: {len(agent.q_table)}")
     return agent
+
+def train_value_iteration(env):
+    """Runs Value Iteration to compute optimal policy."""
+    print(f"\n--- Starting Value Iteration ---")
+    start_time = time.time()
+
+    v, policy = value_iteration(env, gamma=0.95, theta=1e-6)
+
+    end_time = time.time()
+    print(f"\nValue Iteration Complete in {end_time - start_time:.2f} seconds.")
+    print(f"Total states computed: {len(v)}")
+
+    # Create a wrapper object that mimics the agent interface
+    class ValueIterationPolicy:
+        def __init__(self, policy_):
+            self.policy = policy_
+
+        def get_action(self, state, mode='greedy'):
+            # Value iteration always returns optimal action
+            return self.policy.get(state, random.choice(['N', 'S', 'E', 'W', 'STAY']))
+
+    return ValueIterationPolicy(policy)
 
 
 def evaluate_policy(env, agent, num_trials):
@@ -110,19 +140,36 @@ def run_generalization_test(agent, grid_size, obstacle_density, person_move_prob
     return overall_avg_reward, overall_avg_success_rate
 
 def main():
+    if len(sys.argv) <= 1:
+        print("No algorithm specified")
+        sys.exit(1)
+    elif sys.argv[1].lower() not in ['qlearning', 'vi']:
+        print("Invalid algorithm specified. Use 'qlearning' or 'vi'.")
+        sys.exit(1)
+    else:
+        print(f"Algorithm selected: {sys.argv[1].upper()}")
+    algorithm = sys.argv[1].lower()
     # --- 1. CONFIGURATION ---
     # Set a fixed seed for reproducible map generation for training
     MAP_SEED = 42
     random.seed(MAP_SEED)
     np.random.seed(MAP_SEED)
 
-    GRID_SIZE = 10
+    GRID_SIZE = 15
     OBSTACLE_DENSITY = 0.15  # Defined explicitly
     PERSON_MOVE_PROB = 0.5  # Defined explicitly
-    NUM_EPISODES = 5000
+    NUM_EPISODES = 50000
 
     # Seeds for the 5 unique generalization maps (must be different from MAP_SEED=42)
     GENERALIZATION_SEEDS = [101, 150, 205, 314, 400]
+
+    # Choose which algorithm to use
+    if algorithm == 'vi':
+        selected_algorithm = Algorithm.VALUE_ITERATION
+    else:
+        selected_algorithm = Algorithm.Q_LEARNING
+
+
 
     # --- 2. ENVIRONMENT SETUP (Training Map) ---
     env = GridWorld(grid_size=GRID_SIZE, obstacle_density=OBSTACLE_DENSITY, person_move_prob=PERSON_MOVE_PROB)
@@ -132,8 +179,11 @@ def main():
     env.render()
 
     # --- 3. AGENT SETUP & TRAINING ---
-    agent = QLearningAgent(actions=env.actions, epsilon=0.1, discount_factor=0.95)
-    agent = train_agent(env, agent, NUM_EPISODES)
+    if selected_algorithm == Algorithm.VALUE_ITERATION:
+        agent = train_value_iteration(env)
+    else:
+        agent = QLearningAgent(actions=env.actions, epsilon=0.1, discount_factor=0.95)
+        agent = train_agent(env, agent, NUM_EPISODES)
 
     # --- 4. EVALUATION ON TRAINING MAP (Optimality Check) ---
     # Re-establish seed 42 to ensure evaluation is on the exact training map instance

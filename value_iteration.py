@@ -1,7 +1,7 @@
 import numpy as np
 import random
 
-from environment import GridWorld, ACTION_TO_DELTA
+from environment import GridWorld, ACTION_TO_DELTA, Manhattan_Dist
 
 PERSON_ACTIONS = ['N', 'S', 'E', 'W', 'STAY']
 
@@ -58,6 +58,7 @@ def value_iteration(env, gamma=0.9, theta=1e-6, max_iterations=1000):
             # For each action, compute Q(s, a)
             best_value = float('-inf')
             best_action = None
+            curr_dist = Manhattan_Dist((robot_r, robot_c), (person_r, person_c))
             
             for action in env.actions:
                 new_robot_r, new_robot_c = move_if_valid(robot_r, robot_c, action)
@@ -75,7 +76,8 @@ def value_iteration(env, gamma=0.9, theta=1e-6, max_iterations=1000):
                         reward = 99  # 100 - 1 (rescue reward minus step cost)
                     else:
                         reward = -1  # Step cost
-                    
+                    new_dist = Manhattan_Dist((new_robot_r, new_robot_c), (new_person_r, new_person_c))
+                    reward += (curr_dist - new_dist) * 2  # Reward for moving closer
                     # Bellman update
                     q_value += prob * (reward + gamma * V.get(next_state, 0.0))
                 
