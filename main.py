@@ -1,233 +1,153 @@
+"""
+Main entry point for the robot rescue reinforcement learning experiments.
+
+This script orchestrates training and evaluation of different RL algorithms
+on a grid-based search-and-rescue scenario.
+"""
+
 import numpy as np
 import random
-import time
 import sys
-from enum import Enum
 
 from environment import GridWorld
-from qlearning import QLearningAgent
-from value_iteration import value_iteration
+from qlearning import QLearningAgent, train_qlearning
+from value_iteration import value_iteration, ValueIterationPolicy
+from evaluation import (
+    evaluate_policy,
+    run_generalization_test,
+    demonstrate_policy,
+    print_evaluation_summary,
+    evaluate_policy_detailed
+)
 
-"""A simple grid world environment for a search-and-rescue robot scenario.
-The robot must navigate a grid with obstacles to reach a person in need of rescue."""
 
-class Algorithm(Enum):
-    Q_LEARNING = 1
-    VALUE_ITERATION = 2
-    ALL = 3
+def parse_algorithm(args):
+    """Parse command-line arguments to determine which algorithm to use."""
+    if len(args) <= 1:
+        print("Usage: python main.py [qlearning|vi]")
+        print("  qlearning - Use Q-Learning algorithm")
+        print("  vi        - Use Value Iteration algorithm")
+        sys.exit(1)
 
-def train_agent(env, agent, num_episodes):
-    """Runs the Q-Learning training loop."""
-    print(f"\n--- Starting Q-Learning Training ({num_episodes} episodes) ---")
-    start_time = time.time()
+    algorithm = args[1].lower()
+    if algorithm not in ['qlearning', 'vi']:
+        print(f"Error: Invalid algorithm '{algorithm}'")
+        print("Valid options: 'qlearning' or 'vi'")
+        sys.exit(1)
 
-    for episode in range(num_episodes):
-        state = env.reset()
-        done = False
-        step = 0
+    print(f"Algorithm selected: {algorithm.upper()}")
+    return algorithm
 
-        while not done and step < 500:  # Max steps per episode
-            # 1. Select action using epsilon-greedy policy
-            action = agent.get_action(state, mode='epsilon')
 
-            # 2. Interact with the environment
-            next_state, reward, done = env.transition(action)
+def setup_environment(seed, grid_size, obstacle_density, person_move_prob):
+    """Create and initialize the GridWorld environment."""
+    random.seed(seed)
+    np.random.seed(seed)
 
-            # 3. Update the Q-table
-            agent.update_q_table(state, action, reward, next_state)
+    env = GridWorld(
+        grid_size=grid_size,
+        obstacle_density=obstacle_density,
+        person_move_prob=person_move_prob
+    )
 
-            state = next_state
-            step += 1
+    return env
 
-        if (episode + 1) % (num_episodes // 10) == 0:
-            # FIX: Unpack the tuple returned by evaluate_policy
-            avg_reward, _ = evaluate_policy(env, agent, num_trials=100)
-            print(f"Episode {episode + 1:5d}/{num_episodes} | Avg Reward (100 trials): {avg_reward:.2f}")
 
-    end_time = time.time()
-    print(f"\nTraining Complete in {end_time - start_time:.2f} seconds.")
-    print(f"Total learned states: {len(agent.q_table)}")
+def train_agent(env, algorithm, num_episodes):
+    """
+    Train an agent using the specified algorithm.
+
+    Args:
+        env: GridWorld environment
+        algorithm: 'qlearning' or 'vi'
+        num_episodes: Number of training episodes (only used for Q-Learning)
+
+    Returns:
+        Trained agent object
+    """
+    if algorithm == 'vi':
+        print("\n--- Starting Value Iteration Training ---")
+        agent = value_iteration(env, gamma=0.95, theta=1e-6)
+    else:  # qlearning
+        print(f"\n--- Starting Q-Learning Training ({num_episodes} episodes) ---")
+        agent = QLearningAgent(
+            actions=env.actions,
+            learning_rate=0.1,
+            discount_factor=0.95,
+            epsilon=0.1
+        )
+        agent = train_qlearning(env, agent, num_episodes)
+
     return agent
 
-def train_value_iteration(env):
-    """Runs Value Iteration to compute optimal policy."""
-    print(f"\n--- Starting Value Iteration ---")
-    start_time = time.time()
-
-    v, policy = value_iteration(env, gamma=0.95, theta=1e-6)
-
-    end_time = time.time()
-    print(f"\nValue Iteration Complete in {end_time - start_time:.2f} seconds.")
-    print(f"Total states computed: {len(v)}")
-
-    # Create a wrapper object that mimics the agent interface
-    class ValueIterationPolicy:
-        def __init__(self, policy_):
-            self.policy = policy_
-
-        def get_action(self, state, mode='greedy'):
-            # Value iteration always returns optimal action
-            return self.policy.get(state, random.choice(['N', 'S', 'E', 'W', 'STAY']))
-
-    return ValueIterationPolicy(policy)
-
-
-def evaluate_policy(env, agent, num_trials):
-    """Evaluates the final greedy policy over multiple trials."""
-    total_reward = 0
-    total_successes = 0
-
-    for _ in range(num_trials):
-        state = env.reset()
-        done = False
-        step = 0
-        episode_reward = 0
-
-        while not done and step < 500:  # Max steps for evaluation
-            action = agent.get_action(state, mode='greedy')  # Use the fixed greedy policy
-            next_state, reward, done = env.transition(action)
-            episode_reward += reward
-            state = next_state
-            step += 1
-
-        total_reward += episode_reward
-        if done:
-            total_successes += 1
-
-    avg_reward = total_reward / num_trials
-    success_rate = total_successes / num_trials
-    return avg_reward, success_rate
-
-
-def run_generalization_test(agent, grid_size, obstacle_density, person_move_prob, generalization_seeds,
-                            num_trials_per_map):
-    """
-    Evaluates a trained policy (agent) across multiple newly generated environments.
-    """
-    all_rewards = []
-    all_success_rates = []
-
-    print("\n--- Starting Generalization Testing ---")
-
-    for map_seed in generalization_seeds:
-        # Step 1: Set a unique seed to generate a brand new map topology
-        random.seed(map_seed)
-        np.random.seed(map_seed)
-        print(f"\nGenerating new map with SEED={map_seed}...")
-        # Step 2: Create a new environment instance for this specific map
-        test_env = GridWorld(grid_size=grid_size,
-                             obstacle_density=obstacle_density,
-                             person_move_prob=person_move_prob)
-        print("New Map:")
-        test_env.render()
-        # Step 3: Evaluate the trained policy on this new map
-        avg_reward, success_rate = evaluate_policy(test_env, agent, num_trials_per_map)
-
-        all_rewards.append(avg_reward)
-        all_success_rates.append(success_rate)
-
-        print(f"Map Seed {map_seed:4d} | Avg Reward: {avg_reward:.2f} | Success Rate: {success_rate * 100:.2f}%")
-
-    # Calculate overall average across all generalization maps
-    overall_avg_reward = np.mean(all_rewards)
-    overall_avg_success_rate = np.mean(all_success_rates)
-
-    print("\n--- Generalization Summary ---")
-    print(f"Total maps tested: {len(generalization_seeds)}")
-    print(f"Overall Avg Cumulative Reward: {overall_avg_reward:.2f}")
-    print(f"Overall Avg Success Rate: {overall_avg_success_rate * 100:.2f}%")
-
-    return overall_avg_reward, overall_avg_success_rate
 
 def main():
-    if len(sys.argv) <= 1:
-        print("No algorithm specified")
-        sys.exit(1)
-    elif sys.argv[1].lower() not in ['qlearning', 'vi']:
-        print("Invalid algorithm specified. Use 'qlearning' or 'vi'.")
-        sys.exit(1)
-    else:
-        print(f"Algorithm selected: {sys.argv[1].upper()}")
-    algorithm = sys.argv[1].lower()
-    # --- 1. CONFIGURATION ---
-    # Set a fixed seed for reproducible map generation for training
+    # --- CONFIGURATION ---
     MAP_SEED = 42
-    random.seed(MAP_SEED)
-    np.random.seed(MAP_SEED)
-
     GRID_SIZE = 15
-    OBSTACLE_DENSITY = 0.15  # Defined explicitly
-    PERSON_MOVE_PROB = 0.5  # Defined explicitly
-    NUM_EPISODES = 50000
+    OBSTACLE_DENSITY = 0.15
+    PERSON_MOVE_PROB = 0.5
+    NUM_EPISODES = 50000  # For Q-Learning
 
-    # Seeds for the 5 unique generalization maps (must be different from MAP_SEED=42)
+    # Seeds for generalization testing
     GENERALIZATION_SEEDS = [101, 150, 205, 314, 400]
 
-    # Choose which algorithm to use
-    if algorithm == 'vi':
-        selected_algorithm = Algorithm.VALUE_ITERATION
-    else:
-        selected_algorithm = Algorithm.Q_LEARNING
+    # --- PARSE ARGUMENTS ---
+    algorithm = parse_algorithm(sys.argv)
 
+    # --- ENVIRONMENT SETUP ---
+    print(f"\n--- Environment Setup ({GRID_SIZE}x{GRID_SIZE} Grid) ---")
+    env = setup_environment(MAP_SEED, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB)
 
-
-    # --- 2. ENVIRONMENT SETUP (Training Map) ---
-    env = GridWorld(grid_size=GRID_SIZE, obstacle_density=OBSTACLE_DENSITY, person_move_prob=PERSON_MOVE_PROB)
-
-    print(f"--- Environment Setup ({GRID_SIZE}x{GRID_SIZE} Grid) ---")
     print("Initial Map for Training:")
     env.render()
 
-    # --- 3. AGENT SETUP & TRAINING ---
-    if selected_algorithm == Algorithm.VALUE_ITERATION:
-        agent = train_value_iteration(env)
-    else:
-        agent = QLearningAgent(actions=env.actions, epsilon=0.1, discount_factor=0.95)
-        agent = train_agent(env, agent, NUM_EPISODES)
+    # --- TRAINING ---
+    agent = train_agent(env, algorithm, NUM_EPISODES)
 
-    # --- 4. EVALUATION ON TRAINING MAP (Optimality Check) ---
-    # Re-establish seed 42 to ensure evaluation is on the exact training map instance
+    # --- EVALUATION ON TRAINING MAP ---
+    print("\n--- Final Policy Evaluation (Training Map) ---")
     random.seed(MAP_SEED)
     np.random.seed(MAP_SEED)
+    env = setup_environment(MAP_SEED, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB)
 
-    num_trials = 1000
-    avg_reward_train, success_rate_train = evaluate_policy(env, agent, num_trials)
+    results = evaluate_policy_detailed(env, agent, num_trials=1000)
+    print_evaluation_summary(results, f"Training Map Performance (SEED={MAP_SEED})")
 
-    print("\n--- Final Policy Evaluation (Optimality Check) ---")
-    print(f"Tested on {num_trials} trials of the training map (SEED={MAP_SEED}).")
-    print(f"Average Cumulative Reward: {avg_reward_train:.2f}")
-    print(f"Success Rate (within 500 steps): {success_rate_train * 100:.2f}%")
+    # --- GENERALIZATION TESTING ---
+    print("\n" + "=" * 60)
+    print("GENERALIZATION EVALUATION")
+    print("=" * 60)
 
-    # --- 5. GENERALIZATION EVALUATION ---
-    # Test the policy on new, unseen maps
-    run_generalization_test(agent, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB,
-                            GENERALIZATION_SEEDS, num_trials_per_map=200)
+    run_generalization_test(
+        agent=agent,
+        grid_size=GRID_SIZE,
+        obstacle_density=OBSTACLE_DENSITY,
+        person_move_prob=PERSON_MOVE_PROB,
+        generalization_seeds=GENERALIZATION_SEEDS,
+        num_trials_per_map=200
+    )
 
-    # --- 6. DEMONSTRATE LEARNED POLICY (on training map for visual check) ---
-    # Re-establish seed 42 for the demo start state
-    random.seed(MAP_SEED)
-    np.random.seed(MAP_SEED)
-
-    print("\n--- Demonstration of Learned Greedy Policy ---")
-    env.reset()
-    state = env.get_state()
-    done = False
-    step_count = 0
-
-    print("DEMO START:")
-    env.render()
-
-    while not done and step_count < 20:  # Limit demo steps
-        action = agent.get_action(state, mode='greedy')
-        print(f"\nStep {step_count + 1}, Action: {action} (Greedy)")
-        state, reward, done = env.transition(action)
-        env.render()
-        if done:
-            print(f"Rescue Successful! Total Reward: {reward}")
-
-        step_count += 1
+    # # --- DEMONSTRATION ---
+    # print("\n" + "=" * 60)
+    # print("POLICY DEMONSTRATION")
+    # print("=" * 60)
+    #
+    # # Reset environment to initial state for demonstration
+    # random.seed(MAP_SEED)
+    # np.random.seed(MAP_SEED)
+    # env = setup_environment(MAP_SEED, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB)
+    #
+    # demo_results = demonstrate_policy(env, agent, max_steps=20, render=True)
+    #
+    # if not demo_results['success']:
+    #     print(f"\nDemo ended after {demo_results['steps_taken']} steps without rescue.")
+    #     print(f"Total reward: {demo_results['total_reward']:.2f}")
+    #
+    # print("\n" + "=" * 60)
+    # print("EXPERIMENT COMPLETE")
+    # print("=" * 60)
 
 
 if __name__ == "__main__":
     main()
-
