@@ -14,7 +14,7 @@ def evaluate_policy(env, agent, num_trials: int, max_steps: int = 500) -> Tuple[
     """
     Evaluates a policy over multiple trials on a given environment.
 
-    This function works with any agent that implements a get_action(state, mode='greedy') method.
+    This function works with any agent that implements a get_action(env, state, mode='greedy') method.
 
     Args:
         env: GridWorld environment instance
@@ -37,7 +37,7 @@ def evaluate_policy(env, agent, num_trials: int, max_steps: int = 500) -> Tuple[
         episode_reward = 0.0
 
         while not done and step < max_steps:
-            action = agent.get_action(state, mode='greedy')
+            action = agent.get_action(env, state, mode='greedy')
             next_state, reward, done = env.transition(action)
             episode_reward += reward
             state = next_state
@@ -85,7 +85,7 @@ def evaluate_policy_detailed(env, agent, num_trials: int, max_steps: int = 500) 
         episode_reward = 0.0
 
         while not done and step < max_steps:
-            action = agent.get_action(state, mode='greedy')
+            action = agent.get_action(env, state, mode='greedy')
             next_state, reward, done = env.transition(action)
             episode_reward += reward
             state = next_state
@@ -204,7 +204,7 @@ def demonstrate_policy(env, agent, max_steps: int = 20, render: bool = True) -> 
         env.render()
 
     while not done and step_count < max_steps:
-        action = agent.get_action(state, mode='greedy')
+        action = agent.get_action(env, state, mode='greedy')
         next_state, reward, done = env.transition(action)
 
         trajectory.append((state, action, reward))

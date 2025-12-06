@@ -30,7 +30,7 @@ class ValueIterationPolicy:
         """
         self.policy = policy
 
-    def get_action(self, state, mode='greedy'):
+    def get_action(self, env, state, mode='greedy'):
         """
         Get the optimal action for a given state.
 

@@ -8,6 +8,9 @@ import random
 import time
 from collections import defaultdict
 
+from environment import ACTION_TO_DELTA
+
+PERSON_ACTIONS = ['N', 'S', 'E', 'W', 'STAY']
 
 class QLearningAgent:
     """Implements the Q-Learning algorithm to find the optimal policy."""
@@ -31,7 +34,7 @@ class QLearningAgent:
         # Using defaultdict to handle new states automatically with initial Q=0
         self.q_table = defaultdict(lambda: {a: 0.0 for a in self.actions})
 
-    def get_action(self, state, mode='greedy'):
+    def get_action(self, env, state, mode='greedy'):
         """
         Selects an action based on the current policy.
 
@@ -42,17 +45,28 @@ class QLearningAgent:
         Returns:
             Selected action string
         """
+        grid_size = env.grid_size
+        grid = env.grid
+
+        def is_open(r, c):
+            """Check if a cell is within bounds and not an obstacle."""
+            return 0 <= r < grid_size and 0 <= c < grid_size and grid[r, c] != 1
+        
+        valid_actions = [a for a in PERSON_ACTIONS if is_open(state[0] + ACTION_TO_DELTA[a][0], state[1] + ACTION_TO_DELTA[a][1])] 
+        # print(f"Valid actions from state {state}: {valid_actions}")
+    
         state_q_values = self.q_table[state]
 
         if mode == 'epsilon' and random.random() < self.epsilon:
             # Explore: Choose a random action
-            return random.choice(self.actions)
+            return random.choice(valid_actions)
         else:
             # Exploit (Greedy): Choose the action with the maximum Q-value
             max_q = -float('inf')
             best_actions = []
 
-            for action, q_value in state_q_values.items():
+            for action in valid_actions:
+                q_value = state_q_values[action]
                 if q_value > max_q:
                     max_q = q_value
                     best_actions = [action]
@@ -100,7 +114,7 @@ def train_qlearning(env, agent, num_episodes, max_steps_per_episode=500,
 
     Returns:
         Trained agent (same object, modified in-place)
-    """
+    """    
     if eval_interval is None:
         eval_interval = max(1, num_episodes // 10)
 
@@ -113,7 +127,7 @@ def train_qlearning(env, agent, num_episodes, max_steps_per_episode=500,
 
         while not done and step < max_steps_per_episode:
             # 1. Select action using epsilon-greedy policy
-            action = agent.get_action(state, mode='epsilon')
+            action = agent.get_action(env, state, mode='epsilon')
 
             # 2. Interact with the environment
             next_state, reward, done = env.transition(action)
