@@ -73,7 +73,8 @@ class GridWorld:
         while not valid_init and attempts < 1000:
             attempts += 1
             # 1. Generate the Grid (0: open, 1: obstacle)
-            if attempts != 0: self.grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
+            if attempts != 0: 
+                self.grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
             # Randomly place obstacles
             num_obstacles = int(self.grid_size * self.grid_size * obstacle_density)
             obstacle_coordinates = set()
