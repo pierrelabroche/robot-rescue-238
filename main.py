@@ -8,10 +8,12 @@ on a grid-based search-and-rescue scenario.
 import numpy as np
 import random
 import sys
+import time
 
 from environment import GridWorld
 from qlearning import QLearningAgent, train_qlearning
 from value_iteration import value_iteration, ValueIterationPolicy
+from baseline_heuristic import RandomPolicy
 from evaluation import (
     evaluate_policy,
     run_generalization_test,
@@ -24,15 +26,16 @@ from evaluation import (
 def parse_algorithm(args):
     """Parse command-line arguments to determine which algorithm to use."""
     if len(args) <= 1:
-        print("Usage: python main.py [qlearning|vi]")
+        print("Usage: python main.py [qlearning|vi|baseline]")
         print("  qlearning - Use Q-Learning algorithm")
         print("  vi        - Use Value Iteration algorithm")
+        print("  baseline  - Use random baseline heuristic")
         sys.exit(1)
 
     algorithm = args[1].lower()
-    if algorithm not in ['qlearning', 'vi']:
+    if algorithm not in ['qlearning', 'vi', 'baseline']:
         print(f"Error: Invalid algorithm '{algorithm}'")
-        print("Valid options: 'qlearning' or 'vi'")
+        print("Valid options: 'qlearning', 'vi', or 'baseline'")
         sys.exit(1)
 
     print(f"Algorithm selected: {algorithm.upper()}")
@@ -59,15 +62,21 @@ def train_agent(env, algorithm, num_episodes):
 
     Args:
         env: GridWorld environment
-        algorithm: 'qlearning' or 'vi'
+        algorithm: 'qlearning', 'vi', or 'baseline'
         num_episodes: Number of training episodes (only used for Q-Learning)
 
     Returns:
-        Trained agent object
+        Trained agent object (or baseline agent for 'baseline')
     """
     if algorithm == 'vi':
         print("\n--- Starting Value Iteration Training ---")
         agent = value_iteration(env, gamma=0.95, theta=1e-6)
+    elif algorithm == 'baseline':
+        print("\n--- Using Random Baseline Heuristic (No Training Required) ---")
+        baseline_start = time.time()
+        agent = RandomPolicy(actions=env.actions)
+        baseline_end = time.time()
+        print(f"Agent Creation Time: {baseline_end - baseline_start:.4f} seconds")
     else:  # qlearning
         print(f"\n--- Starting Q-Learning Training ({num_episodes} episodes) ---")
         agent = QLearningAgent(
@@ -111,14 +120,18 @@ def main():
     np.random.seed(MAP_SEED)
     env = setup_environment(MAP_SEED, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB)
 
+    eval_start_time = time.time()
     results = evaluate_policy_detailed(env, agent, num_trials=1000)
+    eval_end_time = time.time()
     print_evaluation_summary(results, f"Training Map Performance (SEED={MAP_SEED})")
+    print(f"Evaluation Runtime: {eval_end_time - eval_start_time:.2f} seconds")
 
     # --- GENERALIZATION TESTING ---
     print("\n" + "=" * 60)
     print("GENERALIZATION EVALUATION")
     print("=" * 60)
 
+    gen_start_time = time.time()
     run_generalization_test(
         agent=agent,
         grid_size=GRID_SIZE,
@@ -127,6 +140,11 @@ def main():
         generalization_seeds=GENERALIZATION_SEEDS,
         num_trials_per_map=200
     )
+    gen_end_time = time.time()
+    print(f"\nGeneralization Testing Runtime: {gen_end_time - gen_start_time:.2f} seconds")
+    
+    total_runtime = (eval_end_time - eval_start_time) + (gen_end_time - gen_start_time)
+    print(f"Total Evaluation Runtime: {total_runtime:.2f} seconds")
 
     # # --- DEMONSTRATION ---
     # print("\n" + "=" * 60)
