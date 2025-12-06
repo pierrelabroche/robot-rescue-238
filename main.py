@@ -39,7 +39,7 @@ def parse_algorithm(args):
     return algorithm
 
 
-def setup_environment(seed, grid_size, obstacle_density, person_move_prob):
+def setup_environment(seed, grid_size, obstacle_density, person_move_prob, num_people=1):
     """Create and initialize the GridWorld environment."""
     random.seed(seed)
     np.random.seed(seed)
@@ -47,7 +47,8 @@ def setup_environment(seed, grid_size, obstacle_density, person_move_prob):
     env = GridWorld(
         grid_size=grid_size,
         obstacle_density=obstacle_density,
-        person_move_prob=person_move_prob
+        person_move_prob=person_move_prob,
+        num_people=num_people
     )
 
     return env
@@ -88,6 +89,7 @@ def main():
     OBSTACLE_DENSITY = 0.15
     PERSON_MOVE_PROB = 0.5
     NUM_EPISODES = 50000  # For Q-Learning
+    NUM_PEOPLE = 3
 
     # Seeds for generalization testing
     GENERALIZATION_SEEDS = [101, 150, 205, 314, 400]
@@ -97,7 +99,7 @@ def main():
 
     # --- ENVIRONMENT SETUP ---
     print(f"\n--- Environment Setup ({GRID_SIZE}x{GRID_SIZE} Grid) ---")
-    env = setup_environment(MAP_SEED, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB)
+    env = setup_environment(MAP_SEED, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB, NUM_PEOPLE)
 
     print("Initial Map for Training:")
     env.render()
@@ -109,44 +111,44 @@ def main():
     print("\n--- Final Policy Evaluation (Training Map) ---")
     random.seed(MAP_SEED)
     np.random.seed(MAP_SEED)
-    env = setup_environment(MAP_SEED, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB)
+    # env = setup_environment(MAP_SEED, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB, NUM_PEOPLE)
 
-    results = evaluate_policy_detailed(env, agent, num_trials=1000)
-    print_evaluation_summary(results, f"Training Map Performance (SEED={MAP_SEED})")
+    # results = evaluate_policy_detailed(env, agent, num_trials=1000)
+    # print_evaluation_summary(results, f"Training Map Performance (SEED={MAP_SEED})")
 
-    # --- GENERALIZATION TESTING ---
+    # # --- GENERALIZATION TESTING ---
+    # print("\n" + "=" * 60)
+    # print("GENERALIZATION EVALUATION")
+    # print("=" * 60)
+
+    # run_generalization_test(
+    #     agent=agent,
+    #     grid_size=GRID_SIZE,
+    #     obstacle_density=OBSTACLE_DENSITY,
+    #     person_move_prob=PERSON_MOVE_PROB,
+    #     generalization_seeds=GENERALIZATION_SEEDS,
+    #     num_trials_per_map=200
+    # )
+
+    # --- DEMONSTRATION ---
     print("\n" + "=" * 60)
-    print("GENERALIZATION EVALUATION")
+    print("POLICY DEMONSTRATION")
     print("=" * 60)
-
-    run_generalization_test(
-        agent=agent,
-        grid_size=GRID_SIZE,
-        obstacle_density=OBSTACLE_DENSITY,
-        person_move_prob=PERSON_MOVE_PROB,
-        generalization_seeds=GENERALIZATION_SEEDS,
-        num_trials_per_map=200
-    )
-
-    # # --- DEMONSTRATION ---
-    # print("\n" + "=" * 60)
-    # print("POLICY DEMONSTRATION")
-    # print("=" * 60)
-    #
-    # # Reset environment to initial state for demonstration
-    # random.seed(MAP_SEED)
-    # np.random.seed(MAP_SEED)
-    # env = setup_environment(MAP_SEED, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB)
-    #
-    # demo_results = demonstrate_policy(env, agent, max_steps=20, render=True)
-    #
-    # if not demo_results['success']:
-    #     print(f"\nDemo ended after {demo_results['steps_taken']} steps without rescue.")
-    #     print(f"Total reward: {demo_results['total_reward']:.2f}")
-    #
-    # print("\n" + "=" * 60)
-    # print("EXPERIMENT COMPLETE")
-    # print("=" * 60)
+    
+    # Reset environment to initial state for demonstration
+    random.seed(MAP_SEED)
+    np.random.seed(MAP_SEED)
+    env = setup_environment(MAP_SEED, GRID_SIZE, OBSTACLE_DENSITY, PERSON_MOVE_PROB, NUM_PEOPLE)
+    
+    demo_results = demonstrate_policy(env, agent, max_steps=20, render=True)
+    
+    if not demo_results['success']:
+        print(f"\nDemo ended after {demo_results['steps_taken']} steps without rescue.")
+        print(f"Total reward: {demo_results['total_reward']:.2f}")
+    
+    print("\n" + "=" * 60)
+    print("EXPERIMENT COMPLETE")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

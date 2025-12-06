@@ -1,6 +1,5 @@
 import numpy as np
 import random
-
 from collections import deque
 
 ACTION_TO_DELTA = {
@@ -8,11 +7,15 @@ ACTION_TO_DELTA = {
     'S': (1, 0),
     'E': (0, 1),
     'W': (0, -1),
-    'STAY': (0, 0) # Include STAY action
+    'STAY': (0, 0)
 }
+
 Manhattan_Dist = lambda pos1, pos2: abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+
+# -----------------------------
+# Base movable entity
+# -----------------------------
 class MovableEntity:
-    """Base class for anything that can move in the grid."""
     def __init__(self, start_pos, grid_size):
         self.r, self.c = start_pos
         self.grid_size = grid_size
@@ -21,105 +24,124 @@ class MovableEntity:
         return self.r, self.c
 
     def is_valid_pos(self, r, c, grid):
-        """Checks if a position is within bounds and not an obstacle."""
         return (0 <= r < self.grid_size and
                 0 <= c < self.grid_size and
                 grid[r, c] != 1)
 
-class RobotModel(MovableEntity):
-    def __init__(self, start_pos, grid_size):
-        super().__init__(start_pos, grid_size)
 
+class RobotModel(MovableEntity):
     def move(self, action, grid):
         dr, dc = ACTION_TO_DELTA.get(action, (0, 0))
-        r_new, c_new = self.r + dr, self.c + dc
+        nr, nc = self.r + dr, self.c + dc
 
-        if self.is_valid_pos(r_new, c_new, grid):
-            self.r, self.c = r_new, c_new
-        # If invalid move, stay in place
+        if self.is_valid_pos(nr, nc, grid):
+            self.r, self.c = nr, nc
 
         return self.r, self.c
+
 
 class PersonModel(MovableEntity):
     def __init__(self, start_pos, grid_size, move_prob=0.8):
         super().__init__(start_pos, grid_size)
         self.move_prob = move_prob
+
     def move(self, action, grid):
         dr, dc = ACTION_TO_DELTA.get(action, (0, 0))
-        r_new, c_new = self.r + dr, self.c + dc
-
-        if self.is_valid_pos(r_new, c_new, grid):
-            self.r, self.c = r_new, c_new
-        # If invalid move, stay in place
-
+        nr, nc = self.r + dr, self.c + dc
+        if self.is_valid_pos(nr, nc, grid):
+            self.r, self.c = nr, nc
         return self.r, self.c
+
     def random_move(self, grid):
         if np.random.rand() < self.move_prob:
-            action = np.random.choice(list(ACTION_TO_DELTA.keys())[:-1])  # Exclude 'STAY' from random moves
-            return self.move(action, grid)
+            action = np.random.choice(list(ACTION_TO_DELTA.keys())[:-1])  # exclude STAY
+            self.move(action, grid)
         return self.r, self.c
 
+
+# -----------------------------
+# Multi-person GridWorld
+# -----------------------------
 class GridWorld:
-    def __init__(self, grid_size=10, obstacle_density=0.2, person_move_prob=0.8):
+    def __init__(self, grid_size=10, obstacle_density=0.2, person_move_prob=0.8, num_people=3):
+        """
+        VARIABLE-K multi-person rescue environment.
+        """
         self.grid_size = grid_size
         self.obs_density = obstacle_density
         self.person_move_prob = person_move_prob
-        # 1. Generate the Grid (0: open, 1: obstacle, 2: goal/rescue zone)
+        self.num_people = num_people
+
+        # -----------------------------
+        # Grid generation loop
+        # -----------------------------
         valid_init = False
-        attempts = 0  # Safety counter to prevent infinite loop
-        r_pos = (0, 0)
-        p_pos = (0, 0)
-        self.grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
+        attempts = 0
+
         while not valid_init and attempts < 1000:
             attempts += 1
-            # 1. Generate the Grid (0: open, 1: obstacle)
-            if attempts != 0: self.grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
-            # Randomly place obstacles
+
+            # Create grid
+            self.grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
+
+            # Place obstacles
             num_obstacles = int(self.grid_size * self.grid_size * obstacle_density)
-            obstacle_coordinates = set()
-            while len(obstacle_coordinates) < num_obstacles:
+            obstacle_coords = set()
+            while len(obstacle_coords) < num_obstacles:
                 r = np.random.randint(0, self.grid_size)
                 c = np.random.randint(0, self.grid_size)
-                obstacle_coordinates.add((r, c))
-            for r, c in obstacle_coordinates:
+                obstacle_coords.add((r, c))
+            for r, c in obstacle_coords:
                 self.grid[r, c] = 1
 
-            # 2. Place initial positions (Robot and Person)
-            initial_open_cells = [(r, c) for r in range(self.grid_size)
-                                  for c in range(self.grid_size)
-                                  if self.grid[r, c] == 0]
+            # Select open cells
+            open_cells = [(r, c)
+                          for r in range(self.grid_size)
+                          for c in range(self.grid_size)
+                          if self.grid[r, c] == 0]
 
-            if len(initial_open_cells) < 2:
-                # If too few cells are open, break and retry with a new grid
-                raise ValueError("Too few open cells to place robot and person.")
+            if len(open_cells) < 1 + self.num_people:
+                continue  # not enough room
 
-                # Randomly sample initial positions
-            r_pos, p_pos = random.sample(initial_open_cells, 2)
+            # Sample robot + people positions
+            sampled = random.sample(open_cells, 1 + self.num_people)
+            robot_pos = sampled[0]
+            people_positions = sampled[1:]
 
-            # --- VALIDATION CHECKS ---
-
-            # Check Path must exist between robot and person start
-            path_exists = self.is_path_valid(r_pos, p_pos)
-
-            valid_init = path_exists
+            # Check robot has a path to every person
+            valid_init = all(self.is_path_valid(robot_pos, ppos)
+                             for ppos in people_positions)
 
         if not valid_init:
             raise RuntimeError(
-                "Failed to generate a valid, reachable grid state after 1000 attempts. Try reducing obstacle density.")
+                "Failed to generate valid multi-person grid after 1000 attempts."
+            )
 
-        self.robot_pos = r_pos
-        self.person_pos = p_pos
-        # --- Instantiate Entities ---
-        self.robot = RobotModel(r_pos, self.grid_size)
-        self.person = PersonModel(p_pos, self.grid_size, person_move_prob)
+        # Instantiate entities
+        self.robot = RobotModel(robot_pos, self.grid_size)
+        self.people = [PersonModel(p, self.grid_size, self.person_move_prob)
+                       for p in people_positions]
 
-        self.initial_state = self.get_state()
+        self.initial_robot_pos = robot_pos
+        self.initial_people_positions = people_positions.copy()
+
         self.actions = list(ACTION_TO_DELTA.keys())
 
+    # -----------------------------
+    # State Representation
+    # -----------------------------
     def get_state(self):
-        """Returns the current state: (robot_r, robot_c, person_r, person_c)"""
-        return *self.robot.get_pos(), *self.person.get_pos()
+        """
+        State = (robot_r, robot_c, p1_r, p1_c, ..., pk_r, pk_c)
+        """
+        state = [self.robot.r, self.robot.c]
+        for p in self.people:
+            state.extend([p.r, p.c])
+        return tuple(state)
 
+    # -----------------------------
+    # Path check using BFS
+    # -----------------------------
     def is_path_valid(self, start_pos, target_pos):
         """
         Uses Breadth-First Search (BFS) to check if a path exists
@@ -161,65 +183,88 @@ class GridWorld:
 
         return False  # Queue is empty, but target not reached
 
+    # -----------------------------
+    # Reset environment
+    # -----------------------------
     def reset(self):
-        self.robot_pos = self.initial_state[:2]
-        self.person_pos = self.initial_state[2:]
-        self.robot = RobotModel(self.robot_pos, self.grid_size)  # Recreate instance for clean reset
-        self.person = PersonModel(self.person_pos, self.grid_size, self.person_move_prob)
+        self.robot = RobotModel(self.initial_robot_pos, self.grid_size)
+        self.people = [
+            PersonModel(p, self.grid_size, self.person_move_prob)
+            for p in self.initial_people_positions
+        ]
         return self.get_state()
 
-    def transition(self, action: str):
+    # -----------------------------
+    # Transition function
+    # -----------------------------
+    def transition(self, action):
         """
-        Calculates the new state, reward, and termination status
-        after the robot takes an action.
+        Robot moves → check rescues → each person moves → check rescues again.
         """
-        curr_dist = Manhattan_Dist(self.robot.get_pos(), self.person.get_pos())
-        # Reward and Termination
-        reward = -1  # Default step cost
+        reward = -1
         done = False
-        # 1. Robot Movement (Deterministic)
+
+        old_dists = [
+            Manhattan_Dist(self.robot.get_pos(), p.get_pos())
+            for p in self.people
+        ]
+
+        # 1. Robot moves
         self.robot.move(action, self.grid)
 
-        if self.robot.get_pos() == self.person.get_pos():
-            reward += 100  # Large positive reward for rescue
-            done = True
-            return self.get_state(), reward, done
+        # 2. Check rescues BEFORE people move
+        rescued = []
+        for i, p in enumerate(self.people):
+            if self.robot.get_pos() == p.get_pos():
+                reward += 100
+                rescued.append(i)
+        for idx in reversed(rescued):
+            del self.people[idx]
 
-        # 2. Person Movement (Stochastic)
-        self.person.random_move(self.grid)
+        if len(self.people) == 0:
+            return self.get_state(), reward, True
 
-        # Check for Rescue Condition
-        if self.robot.get_pos() == self.person.get_pos():
-            reward += 100  # Large positive reward for rescue
-            done = True
-        new_dist = Manhattan_Dist(self.robot.get_pos(), self.person.get_pos())
-        # Small reward for moving closer, penalty for moving away
-        reward += (curr_dist - new_dist) * 2
-        return self.get_state(), reward, done
+        # 3. People move
+        for p in self.people:
+            p.random_move(self.grid)
 
+        # 4. Check rescues AFTER movement
+        rescued = []
+        for i, p in enumerate(self.people):
+            if self.robot.get_pos() == p.get_pos():
+                reward += 100
+                rescued.append(i)
+        for idx in reversed(rescued):
+            del self.people[idx]
+
+        if len(self.people) == 0:
+            return self.get_state(), reward, True
+
+        # 5. Shaping reward
+        new_dists = [
+            Manhattan_Dist(self.robot.get_pos(), p.get_pos())
+            for p in self.people
+        ]
+        reward += 2 * sum(od - nd for od, nd in zip(old_dists, new_dists))
+
+        return self.get_state(), reward, False
+
+    # -----------------------------
+    # Render function
+    # -----------------------------
     def render(self):
-        """Prints a visual representation of the grid."""
-        display_grid = np.copy(self.grid).astype(str)
+        disp = np.copy(self.grid).astype(str)
+        disp[self.grid == 1] = '█'
+        disp[self.grid == 0] = '·'
 
-        # Mark Obstacles
-        display_grid[self.grid == 1] = '█'
-        # Mark Empty/Open Cells
-        display_grid[self.grid == 0] = '·'
+        # Draw people
+        for p in self.people:
+            pr, pc = p.get_pos()
+            disp[pr, pc] = 'P'
 
-        # --- FIX APPLIED HERE ---
-        # Get the CURRENT position from the entity objects
-        pr, pc = self.person.get_pos()
+        # Draw robot
         rr, rc = self.robot.get_pos()
-        # --- END FIX ---
+        disp[rr, rc] = 'R'
 
-        # Mark Person (P)
-        display_grid[pr, pc] = 'P'
-
-        # Mark Robot (R). If R is on P, 'R' overrides 'P' (Rescue/Goal)
-        if (rr, rc) == (pr, pc):
-            display_grid[rr, rc] = 'G'  # Goal/Rescue
-        else:
-            display_grid[rr, rc] = 'R'
-
-        print("\n".join([" ".join(row) for row in display_grid]))
-        print(f"State: {self.get_state()}")
+        print("\n".join(" ".join(row) for row in disp))
+        print("STATE:", self.get_state())
