@@ -181,11 +181,6 @@ class GridWorld:
         # 1. Robot Movement (Deterministic)
         self.robot.move(action, self.grid)
 
-        if self.robot.get_pos() == self.person.get_pos():
-            reward += 100  # Large positive reward for rescue
-            done = True
-            return self.get_state(), reward, done
-
         # 2. Person Movement (Stochastic)
         self.person.random_move(self.grid)
 
