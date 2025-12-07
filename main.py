@@ -38,7 +38,7 @@ OBSTACLE_DENSITIES = [0.3, 0.5, 0.7]
 PERSON_MOVE_PROBABILITIES = [0.3, 0.5, 0.7]
 
 # --- Define Configuration ---
-NUM_QL_EPISODES = 50000
+NUM_QL_EPISODES = 100000
 NUM_EVAL_TRIALS = 500  # Number of trials for metric stability
 
 # Dictionary to store all 27 results (each containing VI, QL_Optimal, QL_Generalization, RANDOM)
@@ -152,7 +152,7 @@ def save_results_to_csv(flat_data: List[Dict[str, Any]], filename: str = 'final_
 
     try:
         # 'w' mode for writing, newline='' for proper handling across OS
-        with open(filename, 'w', newline='') as csvfile:
+        with open(final_filename, 'w', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
             # 1. Write the header row (column names)
@@ -161,11 +161,11 @@ def save_results_to_csv(flat_data: List[Dict[str, Any]], filename: str = 'final_
             # 2. Write all the data rows
             writer.writerows(flat_data)
 
-        print(f"\n✅ Results successfully saved to {filename}")
+        print(f"\n✅ Results successfully saved to {final_filename}")
         print(f"Total rows written: {len(flat_data)}")
 
     except IOError:
-        print(f"Error: Could not write to CSV file '{filename}'. Check file permissions.")
+        print(f"Error: Could not write to CSV file '{final_filename}'. Check file permissions.")
 
 def flatten_results(all_results: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
