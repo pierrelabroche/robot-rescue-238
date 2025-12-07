@@ -13,7 +13,7 @@ PLOT_FILENAME = 'final_comparison_results.csv'
 METRICS = {
     'ACR': 'Avg_Cumulative_Reward',
     'SR': 'Success_Rate',
-    # 'ASR': 'Avg_Steps_to_Rescue'
+    'ASR': 'Avg_Steps_to_Rescue'
 }
 
 

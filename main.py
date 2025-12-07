@@ -8,6 +8,7 @@ on a grid-based search-and-rescue scenario.
 import numpy as np
 import random
 import sys
+import os
 import pandas as pd
 import seaborn as sns
 
@@ -125,6 +126,17 @@ def save_results_to_csv(flat_data: List[Dict[str, Any]], filename: str = 'final_
         print("Error: No data to save. The flat_data list is empty.")
         return
 
+    base, ext = os.path.splitext(filename)
+    counter = 0
+    final_filename = filename
+
+    while os.path.exists(final_filename):
+        counter += 1
+        # Example: final_comparison_results_1.csv
+        final_filename = f"{base}_{counter}{ext}"
+
+    print(f"\nSaving results to: {final_filename}")
+
     # These fieldnames MUST exactly match the keys created in the flatten_results function.
     fieldnames = [
         'Grid_Size',
@@ -134,6 +146,7 @@ def save_results_to_csv(flat_data: List[Dict[str, Any]], filename: str = 'final_
         'Metric_Type',  # Distinguishes Phase 1 (Optimality) from Phase 2 (Generalization)
         'Avg_Cumulative_Reward',
         'Success_Rate',
+        'Avg_Steps_to_Rescue',
         'Total_Time_s'
     ]
 
@@ -161,8 +174,8 @@ def flatten_results(all_results: Dict[str, Dict[str, Any]]) -> List[Dict[str, An
     """
     flat_data = []
 
-    # Define the consistent metric field names for the CSV file
-    metric_fields = ['ACR', 'SR', 'Time']
+    # Define the consistent metric field names for the CSV file (Updated to include ASR)
+    metric_fields = ['ACR', 'SR', 'ASR', 'Time']
 
     for config_str, scenario_data in all_results.items():
         # --- 1. Parameter Extraction ---
@@ -207,6 +220,7 @@ def flatten_results(all_results: Dict[str, Dict[str, Any]]) -> List[Dict[str, An
                 # Metrics extracted from the 'metrics' dictionary
                 'Avg_Cumulative_Reward': metrics['ACR'],
                 'Success_Rate': metrics['SR'],
+                'Avg_Steps_to_Rescue': metrics['ASR'],
                 'Total_Time_s': metrics['Time'],
             }
             flat_data.append(row)
@@ -247,10 +261,13 @@ def run_experiment_set(grid_size: int, obstacle_density: float, person_move_prob
     total_time_vi = time.time() - start_time_vi
 
     # VI Evaluation (Optimality Check - Phase 1 Data Source)
-    vi_metrics = evaluate_policy(env_train, vi_policy, num_eval_trials)
+    vi_metrics_dict = evaluate_policy_detailed(env_train, vi_policy, num_eval_trials)
 
     scenario_results['VI'] = {
-        'ACR': vi_metrics[0], 'SR': vi_metrics[1], 'Time': total_time_vi,
+        'ACR': vi_metrics_dict['avg_reward'],
+        'SR': vi_metrics_dict['success_rate'],
+        'ASR': vi_metrics_dict['avg_steps_to_success'] if vi_metrics_dict['avg_steps_to_success'] is not None else 500,
+        'Time': total_time_vi,
         'Type': 'Optimality Check (Phase 1)'
     }
 
@@ -261,10 +278,14 @@ def run_experiment_set(grid_size: int, obstacle_density: float, person_move_prob
     total_time_ql = time.time() - start_time_ql
 
     # QL Evaluation (Baseline Optimality Check - Phase 1 Data Source)
-    ql_metrics_opt = evaluate_policy(env_train, ql_agent, num_eval_trials)
+    ql_metrics_opt_dict = evaluate_policy_detailed(env_train, ql_agent, num_eval_trials)
 
     scenario_results['QL_Optimal'] = {
-        'ACR': ql_metrics_opt[0], 'SR': ql_metrics_opt[1], 'Time': total_time_ql,
+        'ACR': ql_metrics_opt_dict['avg_reward'],
+        'SR': ql_metrics_opt_dict['success_rate'],
+        'ASR': ql_metrics_opt_dict['avg_steps_to_success'] if ql_metrics_opt_dict[
+                                                                  'avg_steps_to_success'] is not None else 500,
+        'Time': total_time_ql,
         'Type': 'Optimality Check (Phase 1)'
     }
 
@@ -282,32 +303,54 @@ def run_experiment_set(grid_size: int, obstacle_density: float, person_move_prob
                              person_move_prob=person_move_prob)
 
         # B. Evaluate QL (Fixed Policy from Training)
-        ql_metrics_gen = evaluate_policy(env_test, ql_agent, num_eval_trials)
+        ql_metrics_gen = evaluate_policy_detailed(env_test, ql_agent, num_eval_trials)
         generalization_results['QL'].append(ql_metrics_gen)
 
         # C. Evaluate Random Agent
-        random_metrics_gen = evaluate_policy(env_test, heuristic_agent, num_eval_trials)
+        random_metrics_gen = evaluate_policy_detailed(env_test, heuristic_agent, num_eval_trials)
         generalization_results['RANDOM'].append(random_metrics_gen)
 
     # 5. Aggregate Generalization Metrics (Phase 2 Data Source)
 
-    # QL Generalization (Averaged across 5 test maps)
-    ql_avg_gen = np.mean([m[0] for m in generalization_results['QL']]), \
-        np.mean([m[1] for m in generalization_results['QL']])
+        # --- Function to robustly average metrics across the 5 test maps ---
+        def aggregate_generalization(results_list: List[Dict[str, Any]]) -> Dict[str, float]:
+            # Extract lists of each metric across the 5 seeds
+            acr_list = [r['avg_reward'] for r in results_list]
+            sr_list = [r['success_rate'] for r in results_list]
 
-    scenario_results['QL_Generalization'] = {
-        'ACR': ql_avg_gen[0], 'SR': ql_avg_gen[1], 'Time': total_time_ql,
-        'Type': 'Generalization (Phase 2)'
-    }
+            # ASR requires robust handling for trials with 0 successes (where avg_steps_to_success is None)
+            asr_valid_list = [r['avg_steps_to_success'] for r in results_list if r['avg_steps_to_success'] is not None]
 
-    # Random Generalization (Averaged across 5 test maps)
-    rand_avg_gen = np.mean([m[0] for m in generalization_results['RANDOM']]), \
-        np.mean([m[1] for m in generalization_results['RANDOM']])
+            # If any successes occurred across the 5 maps, average the ASR. Otherwise, use a default high value (500).
+            asr_avg = np.mean(asr_valid_list) if asr_valid_list else 500
 
-    scenario_results['RANDOM'] = {
-        'ACR': rand_avg_gen[0], 'SR': rand_avg_gen[1], 'Time': 0.0,
-        'Type': 'Generalization (Phase 2)'
-    }
+            return {
+                'ACR': np.mean(acr_list),
+                'SR': np.mean(sr_list),
+                'ASR': asr_avg
+            }
+
+        # QL Generalization (Averaged across 5 test maps)
+        ql_avg_gen = aggregate_generalization(generalization_results['QL'])
+
+        scenario_results['QL_Generalization'] = {
+            'ACR': ql_avg_gen['ACR'],
+            'SR': ql_avg_gen['SR'],
+            'ASR': ql_avg_gen['ASR'],  # Save Averaged ASR
+            'Time': total_time_ql,
+            'Type': 'Generalization (Phase 2)'
+        }
+
+        # Random Generalization (Averaged across 5 test maps)
+        rand_avg_gen = aggregate_generalization(generalization_results['RANDOM'])
+
+        scenario_results['RANDOM'] = {
+            'ACR': rand_avg_gen['ACR'],
+            'SR': rand_avg_gen['SR'],
+            'ASR': rand_avg_gen['ASR'],  # Save Averaged ASR
+            'Time': 0.0,
+            'Type': 'Generalization (Phase 2)'
+        }
 
     return scenario_results
 
@@ -403,7 +446,7 @@ def main():
     # # print("=" * 60)
 
     print("--- Starting Full Factorial Experiment ---")
-
+    start_time_experiments = time.time()
     # Outer loop: Grid Size (Scalability)
     for size in GRID_SIZES:
         # Middle loop: Obstacle Density (Complexity)
@@ -431,7 +474,10 @@ def main():
                 print(f"[{total_experiments}/27] Configuration {config_key} finished.")
 
     # 3. Data Saving and Analysis
+    end_time_experiments = time.time()
     print("\n--- Experimentation Complete ---")
+    total_experiment_time = end_time_experiments - start_time_experiments
+    print(f"Total Experimentation Time: {total_experiment_time:.2f} seconds")
 
     # Flatten the data structure
     flat_data = flatten_results(ALL_RESULTS)
