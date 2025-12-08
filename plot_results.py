@@ -10,7 +10,7 @@ from pyparsing import lineEnd
 # --- Configuration ---
 sns.set_theme(style="whitegrid")
 sns.set_context("paper", font_scale=1.5, rc={"font.size": 16, "axes.titlesize": 16, "axes.labelsize": 14})  # Adjusted font scale for density
-PLOT_FILENAME = 'final_comparison_results_1_1.csv'
+PLOT_FILENAME = 'final_comparison_results_1_2.csv'
 
 # Define the single set of metrics for all plots
 METRICS = {

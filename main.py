@@ -9,12 +9,14 @@ import sys
 import os
 import pandas as pd
 import seaborn as sns
+import time
+import csv
+from typing import Dict, Any, List
 
 from environment import GridWorld
 from qlearning import QLearningAgent, train_qlearning
 from value_iteration import value_iteration, ValueIterationPolicy
 from baseline_heuristic import RandomPolicy
-from sarsa import SARSAAgent, train_sarsa
 from evaluation import (
     evaluate_policy,
     run_generalization_test,
@@ -22,12 +24,13 @@ from evaluation import (
     print_evaluation_summary,
     evaluate_policy_detailed
 )
-import time
 
-import csv
-from typing import Dict, Any, List
+# ⭐ NEW: import SARSA
+from sarsa import SARSAAgent, train_sarsa
 
+# -------------------------
 # Global configurable parameters
+# -------------------------
 MAP_SEED = 42
 GENERALIZATION_SEEDS = [101, 150, 205, 314, 400]
 
@@ -35,29 +38,18 @@ GRID_SIZES = [5, 10, 15]
 OBSTACLE_DENSITIES = [0.3, 0.5]
 PERSON_MOVE_PROBABILITIES = [0.3, 0.5, 0.7]
 
-NUM_PEOPLE = 1   # <<<<<< CHANGE THIS VALUE for different K
+NUM_PEOPLE = [1]   # make list so loop works
 
-NUM_QL_EPISODES = 10000 #0
+NUM_QL_EPISODES = 10000
 NUM_EVAL_TRIALS = 50
 
 ALL_RESULTS = {}
 total_experiments = 0
 
-# # Parse algorithm selection
-# def parse_algorithm(args):
-#     if len(args) <= 1:
-#         print("Usage: python main.py [qlearning|vi|baseline]")
-#         sys.exit(1)
 
-#     algorithm = args[1].lower()
-#     if algorithm not in ['qlearning', 'vi', 'baseline']:
-#         print(f"Error: Invalid algorithm '{algorithm}'")
-#         sys.exit(1)
-
-#     print(f"Algorithm selected: {algorithm.upper()}")
-#     return algorithm
-
-# Setup environment with multiple people (K)
+# -------------------------
+# Environment setup
+# -------------------------
 def setup_environment(seed, grid_size, obstacle_density, person_move_prob, num_people):
     random.seed(seed)
     np.random.seed(seed)
@@ -66,37 +58,16 @@ def setup_environment(seed, grid_size, obstacle_density, person_move_prob, num_p
         grid_size=grid_size,
         obstacle_density=obstacle_density,
         person_move_prob=person_move_prob,
-        num_people=num_people,   # <<<<<< NEW
+        num_people=num_people,
     )
     return env
 
-# Train agent (QL, VI, or Baseline)
-# def train_agent(env, algorithm, num_episodes):
 
-#     if algorithm == 'vi':
-#         print("\n--- Starting Value Iteration Training ---")
-#         agent = value_iteration(env, gamma=0.95, theta=1e-6)
-
-#     elif algorithm == 'baseline':
-#         print("\n--- Using Random Baseline Heuristic ---")
-#         start = time.time()
-#         agent = RandomPolicy(actions=env.actions)
-#         print(f"Baseline ready in {time.time() - start:.4f}s")
-
-#     else:  # Q-Learning
-#         print(f"\n--- Starting Q-Learning Training ({num_episodes} episodes) ---")
-#         agent = QLearningAgent(
-#             actions=env.actions,
-#             learning_rate=0.1,
-#             discount_factor=0.95,
-#             epsilon=0.1
-#         )
-#         agent = train_qlearning(env, agent, num_episodes)
-
-#     return agent
-
+# -------------------------
+# SARSA Training
+# -------------------------
 def train_sarsa_agent(env, num_episodes):
-    print(f"\n--- Training SARSA ({num_episodes} episodes) ---")
+    print(f"\n--- Starting SARSA Training ({num_episodes} episodes) ---")
     agent = SARSAAgent(
         actions=env.actions,
         learning_rate=0.1,
@@ -106,7 +77,10 @@ def train_sarsa_agent(env, num_episodes):
     agent = train_sarsa(env, agent, num_episodes)
     return agent
 
-# CSV Output 
+
+# -------------------------
+# CSV Output
+# -------------------------
 def save_results_to_csv(flat_data, filename='final_comparison_results.csv'):
     if not flat_data:
         print("Error: No data to save.")
@@ -136,6 +110,9 @@ def save_results_to_csv(flat_data, filename='final_comparison_results.csv'):
     print(f"Saved {len(flat_data)} rows.")
 
 
+# -------------------------
+# Flatten Results
+# -------------------------
 def flatten_results(all_results):
     flat_data = []
 
@@ -152,20 +129,25 @@ def flatten_results(all_results):
 
             if algo_key == 'QL_Optimal':
                 algo_name = 'QL'
-                metric_type = 'Optimality (Phase 1)'
             elif algo_key == 'QL_Generalization':
                 algo_name = 'QL'
-                metric_type = 'Generalization (Phase 2)'
+            elif algo_key == 'SARSA_Optimal':
+                algo_name = 'SARSA'
+            elif algo_key == 'SARSA_Generalization':
+                algo_name = 'SARSA'
+            elif algo_key == 'VI':
+                algo_name = 'VI'
+            elif algo_key == 'RANDOM':
+                algo_name = 'RANDOM'
             else:
                 algo_name = algo_key
-                metric_type = metrics.get('Type', 'N/A')
 
             flat_data.append({
                 'Grid_Size': grid_size,
                 'Obstacle_Density': density,
                 'Person_Prob': p_move,
                 'Algorithm': algo_name,
-                'Metric_Type': metric_type,
+                'Metric_Type': metrics.get('Type', 'N/A'),
                 'Avg_Cumulative_Reward': metrics['ACR'],
                 'Success_Rate': metrics['SR'],
                 'Avg_Steps_to_Rescue': metrics['ASR'],
@@ -174,7 +156,10 @@ def flatten_results(all_results):
 
     return flat_data
 
-# The core experiment (PHASE 1 + PHASE 2)
+
+# -------------------------
+# Core experiment: Phase 1 + Phase 2
+# -------------------------
 def run_experiment_set(grid_size, obstacle_density, person_move_prob,
                        num_ql_episodes, num_eval_trials, num_people):
 
@@ -183,7 +168,7 @@ def run_experiment_set(grid_size, obstacle_density, person_move_prob,
 
     scenario_results = {'config': config_name}
 
-    # PHASE 1 — Fixed training map
+    # Phase 1 environment
     random.seed(MAP_SEED)
     np.random.seed(MAP_SEED)
 
@@ -191,10 +176,47 @@ def run_experiment_set(grid_size, obstacle_density, person_move_prob,
         grid_size=grid_size,
         obstacle_density=obstacle_density,
         person_move_prob=person_move_prob,
-        num_people=num_people,   # <<<<<< NEW
+        num_people=num_people
     )
 
-    # SARSA 
+    heuristic_agent = RandomPolicy(actions=env_train.actions)
+
+    # -------------------------
+    # VALUE ITERATION (Unchanged)
+    # -------------------------
+    start_vi = time.time()
+    vi_policy = value_iteration(env_train)
+    vi_time = time.time() - start_vi
+    vi_metrics = evaluate_policy_detailed(env_train, vi_policy, num_eval_trials)
+
+    scenario_results['VI'] = {
+        'ACR': vi_metrics['avg_reward'],
+        'SR': vi_metrics['success_rate'],
+        'ASR': vi_metrics['avg_steps_to_success'] or 500,
+        'Time': vi_time,
+        'Type': 'Optimality (Phase 1)'
+    }
+
+    # -------------------------
+    # Q-LEARNING (Unchanged)
+    # -------------------------
+    start_ql = time.time()
+    ql_agent = QLearningAgent(actions=env_train.actions, epsilon=0.1, discount_factor=0.95)
+    ql_agent = train_qlearning(env_train, ql_agent, num_ql_episodes)
+    ql_time = time.time() - start_ql
+    ql_metrics = evaluate_policy_detailed(env_train, ql_agent, num_eval_trials)
+
+    scenario_results['QL_Optimal'] = {
+        'ACR': ql_metrics['avg_reward'],
+        'SR': ql_metrics['success_rate'],
+        'ASR': ql_metrics['avg_steps_to_success'] or 500,
+        'Time': ql_time,
+        'Type': 'Optimality (Phase 1)'
+    }
+
+    # -------------------------
+    # ⭐ SARSA (NEW)
+    # -------------------------
     start_sarsa = time.time()
     sarsa_agent = train_sarsa_agent(env_train, num_ql_episodes)
     sarsa_time = time.time() - start_sarsa
@@ -208,10 +230,15 @@ def run_experiment_set(grid_size, obstacle_density, person_move_prob,
         'Type': 'Optimality (Phase 1)'
     }
 
-    # PHASE 2 — Generalization
+    # -------------------------
+    # Phase 2 — Generalization
+    # -------------------------
+    all_ql_results = []
     all_sarsa_results = []
+    all_rand_results = []
 
     for map_seed in GENERALIZATION_SEEDS:
+
         random.seed(map_seed)
         np.random.seed(map_seed)
 
@@ -219,15 +246,21 @@ def run_experiment_set(grid_size, obstacle_density, person_move_prob,
             grid_size=grid_size,
             obstacle_density=obstacle_density,
             person_move_prob=person_move_prob,
-            num_people=num_people,
+            num_people=num_people
         )
 
-        # IMPORTANT: evaluate using greedy mode
+        # Q-learning
+        all_ql_results.append(evaluate_policy_detailed(env_test, ql_agent, num_eval_trials))
+
+        # SARSA (force greedy eval)
         sarsa_agent.eval_mode = True
         all_sarsa_results.append(evaluate_policy_detailed(env_test, sarsa_agent, num_eval_trials))
         sarsa_agent.eval_mode = False
 
+        # Baseline
+        all_rand_results.append(evaluate_policy_detailed(env_test, heuristic_agent, num_eval_trials))
 
+    # aggregation helper
     def aggregate(results):
         acr = np.mean([r['avg_reward'] for r in results])
         sr = np.mean([r['success_rate'] for r in results])
@@ -235,7 +268,18 @@ def run_experiment_set(grid_size, obstacle_density, person_move_prob,
         asr = np.mean(asr_vals) if asr_vals else 500
         return acr, sr, asr
 
+    # aggregate outputs
+    ql_acr, ql_sr, ql_asr = aggregate(all_ql_results)
     sarsa_acr, sarsa_sr, sarsa_asr = aggregate(all_sarsa_results)
+    rand_acr, rand_sr, rand_asr = aggregate(all_rand_results)
+
+    scenario_results['QL_Generalization'] = {
+        'ACR': ql_acr,
+        'SR': ql_sr,
+        'ASR': ql_asr,
+        'Time': ql_time,
+        'Type': 'Generalization (Phase 2)'
+    }
 
     scenario_results['SARSA_Generalization'] = {
         'ACR': sarsa_acr,
@@ -245,39 +289,50 @@ def run_experiment_set(grid_size, obstacle_density, person_move_prob,
         'Type': 'Generalization (Phase 2)'
     }
 
+    scenario_results['RANDOM'] = {
+        'ACR': rand_acr,
+        'SR': rand_sr,
+        'ASR': rand_asr,
+        'Time': 0.0,
+        'Type': 'Generalization (Phase 2)'
+    }
+
     return scenario_results
 
-# Driver: full factorial experiment
+
+# -------------------------
+# Experiment Driver
+# -------------------------
 def main():
     global total_experiments
-    num_people = NUM_PEOPLE
-    # for num_people in NUM_PEOPLE:
-    start = time.time()
-    for size in GRID_SIZES:
-        for density in OBSTACLE_DENSITIES:
-            for p_move in PERSON_MOVE_PROBABILITIES:
 
-                scenario_data = run_experiment_set(
-                    grid_size=size,
-                    obstacle_density=density,
-                    person_move_prob=p_move,
-                    num_ql_episodes=NUM_QL_EPISODES,
-                    num_eval_trials=NUM_EVAL_TRIALS,
-                    num_people=num_people
-                )
+    for num_people in NUM_PEOPLE:
+        start = time.time()
 
-                key = scenario_data['config']
-                ALL_RESULTS[key] = scenario_data
+        for size in GRID_SIZES:
+            for density in OBSTACLE_DENSITIES:
+                for p_move in PERSON_MOVE_PROBABILITIES:
 
-                total_experiments += 1
-                print(f"[{total_experiments}/27] Completed {key}")
+                    scenario_data = run_experiment_set(
+                        grid_size=size,
+                        obstacle_density=density,
+                        person_move_prob=p_move,
+                        num_ql_episodes=NUM_QL_EPISODES,
+                        num_eval_trials=NUM_EVAL_TRIALS,
+                        num_people=num_people
+                    )
 
-    print("\n--- Experimentation Complete ---")
-    print(f"Total Time: {time.time() - start:.2f} seconds")
+                    key = scenario_data['config']
+                    ALL_RESULTS[key] = scenario_data
 
-    # Flatten + save
-    flat_data = flatten_results(ALL_RESULTS)
-    save_results_to_csv(flat_data, f'final_comparison_results_{num_people}.csv')
+                    total_experiments += 1
+                    print(f"[{total_experiments}/27] Completed {key}")
+
+        print("\n--- Experimentation Complete ---")
+        print(f"Total Time: {time.time() - start:.2f} seconds")
+
+        flat_data = flatten_results(ALL_RESULTS)
+        save_results_to_csv(flat_data, f'final_comparison_results_{num_people}.csv')
 
 
 if __name__ == "__main__":
