@@ -5,6 +5,8 @@ import seaborn as sns
 import sys
 from typing import Dict, Any
 
+from pyparsing import lineEnd
+
 # --- Configuration ---
 sns.set_theme(style="whitegrid")
 sns.set_context("paper", font_scale=1.0)  # Adjusted font scale for density
@@ -117,9 +119,9 @@ def generate_all_plots(df_source: pd.DataFrame):
         # Configure subplot properties
         axes[i].set_ylim(bottom=df_data['Mean_' + metric_col].min() * 0.95)
         axes[i].set_title(f'({chr(97 + i)}) {metric_key} vs. Grid Size', fontsize=12)
-        axes[i].set_xlabel('Grid Size', fontsize=10)
+        axes[i].set_xlabel('Grid Size', fontsize=12)
         axes[i].set_ylabel(metric_col.replace('_', ' ').replace('Avg ', 'Avg. ').replace('Cumulat ive', 'Cumulative'),
-                           fontsize=10)
+                           fontsize=12)
         axes[i].grid(True, linestyle='--', alpha=0.6)
 
         # Capture handles/labels from the *first* subplot only
@@ -134,7 +136,7 @@ def generate_all_plots(df_source: pd.DataFrame):
                loc='upper center',
                ncol=len(labels),  # Place labels in a row
                bbox_to_anchor=(0.5, 0.93),  # Position slightly above the plots
-               fontsize=10,
+               fontsize=12,
                title_fontsize=12)
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
@@ -159,14 +161,15 @@ def generate_all_plots(df_source: pd.DataFrame):
         df_data = calculate_main_effect(df_generalization, 'Obstacle_Density', metric_col)
 
         # The plot call is modified to capture the artists (lines)
-        artists = sns.barplot(data=df_data, x='Obstacle_Density', y='Mean_' + metric_col, hue='Algorithm',
-                               ax=axes[i], palette='viridis')
+        artists = sns.lineplot(data=df_data, x='Obstacle_Density', y='Mean_' + metric_col, hue='Algorithm',
+                               marker='o', ax=axes[i], linewidth=2.5)
 
+        axes[i].set_xticks(df_data['Obstacle_Density'].unique())
         # Configure subplot properties
         axes[i].set_title(f'({chr(97 + i)}) {metric_key} vs. Density', fontsize=12)
-        axes[i].set_xlabel('Obstacle Density', fontsize=10)
+        axes[i].set_xlabel('Obstacle Density', fontsize=12)
         axes[i].set_ylabel(metric_col.replace('_', ' ').replace('Avg ', 'Avg. ').replace('Cumulat ive', 'Cumulative'),
-                           fontsize=10)
+                           fontsize=12)
         axes[i].grid(True, linestyle='--', alpha=0.6)
 
         # Capture handles/labels from the *first* subplot only
@@ -181,7 +184,7 @@ def generate_all_plots(df_source: pd.DataFrame):
                loc='upper center',
                ncol=len(labels),  # Place labels in a row
                bbox_to_anchor=(0.5, 0.93),  # Position slightly above the plots
-               fontsize=10,
+               fontsize=12,
                title_fontsize=12)
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
@@ -205,14 +208,15 @@ def generate_all_plots(df_source: pd.DataFrame):
         df_data = calculate_main_effect(df_generalization, 'Person_Prob', metric_col)
 
         # Plot and capture artists (bar charts)
-        artists = sns.barplot(data=df_data, x='Person_Prob', y='Mean_' + metric_col,
-                              hue='Algorithm', ax=axes[i], palette='viridis')
+        artists = sns.lineplot(data=df_data, x='Person_Prob', y='Mean_' + metric_col,
+                              hue='Algorithm', marker='o', ax=axes[i], linewidth=2.5)
 
+        axes[i].set_xticks(df_data['Person_Prob'].unique())
         # Configure subplot properties
         axes[i].set_title(f'({chr(97 + i)}) {metric_key} vs. P_move', fontsize=12)
-        axes[i].set_xlabel('Person Probability (P_move)', fontsize=10)
+        axes[i].set_xlabel('Person Probability (P_move)', fontsize=12)
         axes[i].set_ylabel(metric_col.replace('_', ' ').replace('Avg ', 'Avg. ').replace('Cumulat ive', 'Cumulative'),
-                           fontsize=10)
+                           fontsize=12)
         axes[i].grid(True, linestyle='--', alpha=0.6)
 
         # Capture handles/labels from the *first* subplot only
@@ -227,7 +231,7 @@ def generate_all_plots(df_source: pd.DataFrame):
                loc='upper center',
                ncol=len(labels),
                bbox_to_anchor=(0.5, 0.93),  # Position slightly above the plots
-               fontsize=10,
+               fontsize=12,
                title_fontsize=12)
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
