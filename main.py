@@ -31,13 +31,13 @@ MAP_SEED = 42
 GENERALIZATION_SEEDS = [101, 150, 205, 314, 400]
 
 GRID_SIZES = [5, 10, 15]
-OBSTACLE_DENSITIES = [0.3, 0.5, 0.7]
+OBSTACLE_DENSITIES = [0.3, 0.5]
 PERSON_MOVE_PROBABILITIES = [0.3, 0.5, 0.7]
 
-NUM_PEOPLE = [1, 2, 3]   # <<<<<< CHANGE THIS VALUE for different K
+NUM_PEOPLE = 1   # <<<<<< CHANGE THIS VALUE for different K
 
-NUM_QL_EPISODES = 100000
-NUM_EVAL_TRIALS = 500
+NUM_QL_EPISODES = 10000 #0
+NUM_EVAL_TRIALS = 50
 
 ALL_RESULTS = {}
 total_experiments = 0
@@ -262,15 +262,13 @@ def run_experiment_set(grid_size, obstacle_density, person_move_prob,
 
 # Driver: full factorial experiment
 def main():
-
-    start = time.time()
-
     global total_experiments
-
-    for size in GRID_SIZES:
-        for density in OBSTACLE_DENSITIES:
-            for p_move in PERSON_MOVE_PROBABILITIES:
-                for num_people in NUM_PEOPLE:
+    
+    for num_people in NUM_PEOPLE:
+        start = time.time()
+        for size in GRID_SIZES:
+            for density in OBSTACLE_DENSITIES:
+                for p_move in PERSON_MOVE_PROBABILITIES:
 
                     scenario_data = run_experiment_set(
                         grid_size=size,
@@ -287,12 +285,12 @@ def main():
                     total_experiments += 1
                     print(f"[{total_experiments}/27] Completed {key}")
 
-    print("\n--- Experimentation Complete ---")
-    print(f"Total Time: {time.time() - start:.2f} seconds")
+        print("\n--- Experimentation Complete ---")
+        print(f"Total Time: {time.time() - start:.2f} seconds")
 
-    # Flatten + save
-    flat_data = flatten_results(ALL_RESULTS)
-    save_results_to_csv(flat_data, 'final_comparison_results.csv')
+        # Flatten + save
+        flat_data = flatten_results(ALL_RESULTS)
+        save_results_to_csv(flat_data, f'final_comparison_results_{num_people}.csv')
 
 
 if __name__ == "__main__":
