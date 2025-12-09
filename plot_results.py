@@ -10,7 +10,7 @@ from pyparsing import lineEnd
 # --- Configuration ---
 sns.set_theme(style="whitegrid")
 sns.set_context("paper", font_scale=1.5, rc={"font.size": 16, "axes.titlesize": 16, "axes.labelsize": 14})  # Adjusted font scale for density
-PLOT_FILENAME = 'final_comparison_results_1_2.csv'
+PLOT_FILENAME = 'final_comparison_results_2.csv'
 
 # Define the single set of metrics for all plots
 METRICS = {
@@ -71,167 +71,71 @@ def plot_subplot(ax: plt.Axes, data: pd.DataFrame, x_col: str, y_col: str, title
 
 
 # --- 3. Main Plotting Function ---
-
 def generate_all_plots(df_source: pd.DataFrame):
     """
-    Generates the four figures containing the 10 comparative graphs (subplots).
+    Generate a single 1x3 plot comparing ACR, SR, ASR vs Num_People.
+    VI uses Optimality metrics; others use Generalization metrics.
     """
-    # Filter data to include only VI (Optimality) and QL/RANDOM (Generalization)
-    df_generalization = df_source[
-        df_source['Metric_Type'].isin(['Generalization (Phase 2)', 'Optimality Check (Phase 1)'])]
 
-    # --- FIGURE 1: Baseline Check (Single Fixed Map) ---
-    # Find the result of the first training configuration (e.g., 5x5 D0.3 P0.3) for the fixed map.
-    df_baseline_config = df_source[df_source['Metric_Type'] == 'Optimality Check (Phase 1)'].head(3)
+    # --- Select data based on algorithm type ---
+    df_vi = df_source[df_source['Algorithm'] == 'VI']
+    df_vi = df_vi[df_vi['Metric_Type'] == 'Optimality Check (Phase 1)']
 
-    plt.figure(figsize=(8, 5))
-    sns.barplot(data=df_baseline_config, x='Algorithm', y='Avg_Cumulative_Reward', hue='Algorithm', palette='deep',
-                dodge=False)
-    plt.title('Figure 1: Baseline ACR on Fixed Training Map (Single Configuration)', fontsize=14)
-    plt.ylabel('Avg. Cumulative Reward (ACR)')
-    plt.xlabel('Algorithm')
-    plt.show()
+    df_other = df_source[df_source['Algorithm'] != 'VI']
+    df_other = df_other[df_other['Metric_Type'] == 'Generalization (Phase 2)']
 
-    # --- FIGURE 2: Impact of Grid Size (Scalability) ---
+    # Combine
+    df_plot_all = pd.concat([df_vi, df_other], ignore_index=True)
 
+    # Ensure ordering
+    df_plot_all = df_plot_all.sort_values(by=['Num_People', 'Algorithm'])
+
+    # --- Aggregation helper ---
+    def compute_mean(df, metric):
+        return df.groupby(['Num_People', 'Algorithm'])[metric].mean().reset_index()
+
+    # --- Make 1x3 figure ---
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    # fig.suptitle('Figure 2: Impact of Grid Size (Scalability)', fontsize=16)
-
-    # for i, (metric_key, metric_col) in enumerate(METRICS.items()):
-    #     df_data = calculate_main_effect(df_generalization, 'Grid_Size', metric_col)
-    #     plot_subplot(axes[i], df_data, 'Grid_Size', metric_col, f'({chr(97 + i)}) {metric_key} vs. Grid Size',
-    #                  plot_type='line')
-    #
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    # plt.show()
-
     handles, labels = [], []
 
     for i, (metric_key, metric_col) in enumerate(METRICS.items()):
-        df_data = calculate_main_effect(df_generalization, 'Grid_Size', metric_col)
+        ax = axes[i]
 
-        # The plot call is modified to capture the artists (lines)
-        artists = sns.lineplot(data=df_data, x='Grid_Size', y='Mean_' + metric_col, hue='Algorithm',
-                               marker='o', ms=8, ax=axes[i], linewidth=2.5)
+        df_plot = compute_mean(df_plot_all, metric_col)
+        df_plot.rename(columns={metric_col: 'Mean_' + metric_col}, inplace=True)
 
-        axes[i].set_xticks(df_data['Grid_Size'].unique())
+        sns.lineplot(
+            data=df_plot,
+            x='Num_People',
+            y='Mean_' + metric_col,
+            hue='Algorithm',
+            marker='o',
+            ms=8,
+            linewidth=2.5,
+            ax=ax
+        )
 
-        # Configure subplot properties
-        axes[i].set_ylim(bottom=df_data['Mean_' + metric_col].min() * 0.95)
-        axes[i].set_title(f'({chr(97 + i)}) {metric_key} vs. Grid Size', fontsize=12)
-        axes[i].set_xlabel('Grid Size')
-        axes[i].set_ylabel(metric_col.replace('_', ' ').replace('Avg ', 'Avg. ').replace('Cumulat ive', 'Cumulative'))
-        axes[i].grid(True, linestyle='--', alpha=0.6)
+        ax.set_title(f"{metric_key} vs Num People")
+        ax.set_xlabel("Num People")
+        ax.set_ylabel(metric_col.replace('_', ' '))
+        ax.grid(True, linestyle='--', alpha=0.6)
 
-        # Capture handles/labels from the *first* subplot only
+        # Capture legend handles only once
         if i == 0:
-            handles, labels = axes[i].get_legend_handles_labels()
-        if axes[i].legend_ is not None:
-            axes[i].legend_.remove()
+            handles, labels = ax.get_legend_handles_labels()
+        if ax.get_legend() is not None:
+            ax.get_legend().remove()
 
-    # Add the unified legend to the figure
-    fig.legend(handles, labels,
-               # title='Agent',
-               loc='upper center',
-               ncol=len(labels),  # Place labels in a row
-               bbox_to_anchor=(0.5, 0.93)  # Position slightly above the plots
-               # fontsize=12,
-               )
+    # --- Unified Legend ---
+    fig.legend(
+        handles,
+        labels,
+        loc='upper center',
+        ncol=len(labels),
+        bbox_to_anchor=(0.5, 0.97)
+    )
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
-
-    # --- FIGURE 3: Impact of Obstacle Density (Complexity) ---
-
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    # fig.suptitle('Figure 3: Impact of Obstacle Density (Complexity)', fontsize=16)
-
-    # for i, (metric_key, metric_col) in enumerate(METRICS.items()):
-    #     df_data = calculate_main_effect(df_generalization, 'Obstacle_Density', metric_col)
-    #     plot_subplot(axes[i], df_data, 'Obstacle_Density', metric_col, f'({chr(97 + i)}) {metric_key} vs. Density',
-    #                  plot_type='bar')
-    #
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    # plt.show()
-
-    handles, labels = [], []
-
-    for i, (metric_key, metric_col) in enumerate(METRICS.items()):
-        df_data = calculate_main_effect(df_generalization, 'Obstacle_Density', metric_col)
-
-        # The plot call is modified to capture the artists (lines)
-        artists = sns.lineplot(data=df_data, x='Obstacle_Density', y='Mean_' + metric_col, hue='Algorithm',
-                               marker='o', ms=8, ax=axes[i], linewidth=2.5)
-
-        axes[i].set_xticks(df_data['Obstacle_Density'].unique())
-        # Configure subplot properties
-        axes[i].set_title(f'({chr(97 + i)}) {metric_key} vs. Density')
-        axes[i].set_xlabel('Obstacle Density')
-        axes[i].set_ylabel(metric_col.replace('_', ' ').replace('Avg ', 'Avg. ').replace('Cumulat ive', 'Cumulative'))
-        axes[i].grid(True, linestyle='--', alpha=0.6)
-
-        # Capture handles/labels from the *first* subplot only
-        if i == 0:
-            handles, labels = axes[i].get_legend_handles_labels()
-        if axes[i].legend_ is not None:
-            axes[i].legend_.remove()
-
-    # Add the unified legend to the figure
-    fig.legend(handles, labels,
-               # title='Agent',
-               loc='upper center',
-               ncol=len(labels),  # Place labels in a row
-               bbox_to_anchor=(0.5, 0.93)  # Position slightly above the plots
-               # fontsize=12,
-               )
-
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
-
-    # --- FIGURE 4: Impact of Person Probability (Stochasticity) ---
-
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    # fig.suptitle('Figure 4: Impact of Person Probability (Stochasticity)', fontsize=16)
-
-    # for i, (metric_key, metric_col) in enumerate(METRICS.items()):
-    #     df_data = calculate_main_effect(df_generalization, 'Person_Prob', metric_col)
-    #     plot_subplot(axes[i], df_data, 'Person_Prob', metric_col, f'({chr(97 + i)}) {metric_key} vs. P_move',
-    #                  plot_type='bar')
-    #
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    # plt.show()
-    handles, labels = [], []
-
-    for i, (metric_key, metric_col) in enumerate(METRICS.items()):
-        df_data = calculate_main_effect(df_generalization, 'Person_Prob', metric_col)
-
-        # Plot and capture artists (bar charts)
-        artists = sns.lineplot(data=df_data, x='Person_Prob', y='Mean_' + metric_col,
-                              hue='Algorithm', marker='o', ms=8, ax=axes[i], linewidth=2.5)
-
-        axes[i].set_xticks(df_data['Person_Prob'].unique())
-        # Configure subplot properties
-        axes[i].set_title(f'({chr(97 + i)}) {metric_key} vs. P_move')
-        axes[i].set_xlabel('Person Probability (P_move)')
-        axes[i].set_ylabel(metric_col.replace('_', ' ').replace('Avg ', 'Avg. ').replace('Cumulat ive', 'Cumulative'))
-        axes[i].grid(True, linestyle='--', alpha=0.6)
-
-        # Capture handles/labels from the *first* subplot only
-        if i == 0:
-            handles, labels = axes[i].get_legend_handles_labels()
-        if axes[i].legend_ is not None:
-            axes[i].legend_.remove()
-
-    # Add the unified legend to the figure
-    fig.legend(handles, labels,
-               # title='Agent',
-               loc='upper center',
-               ncol=len(labels),
-               bbox_to_anchor=(0.5, 0.93)  # Position slightly above the plots
-               # fontsize=12,
-               )
-
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0, 1, 0.92])
     plt.show()
 
 # --- Execution ---
@@ -258,5 +162,3 @@ if __name__ == '__main__':
 
     # 3. Call the main plotting function
     generate_all_plots(df)
-
-    print("All 10 comparative graphs have been generated.")
